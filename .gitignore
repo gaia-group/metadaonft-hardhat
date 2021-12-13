@@ -1,0 +1,8 @@
+node_modules
+.idea
+
+secrets*
+
+#Hardhat files
+cache
+artifacts
