@@ -1,0 +1,31 @@
+{
+  "name": "meta-dao-nft",
+  "version": "1.0.0",
+  "description": "The Meta DAO club NFT project.",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "hardhat test"
+  },
+  "author": "archit3c",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.0.2",
+    "@nomiclabs/hardhat-waffle": "^2.0.1",
+    "base-64": "^1.0.0",
+    "chai": "^4.3.4",
+    "ethereum-waffle": "^3.1.1",
+    "ethers": "^5.5.0",
+    "hardhat": "^2.6.6",
+    "husky": "^4.2.5",
+    "prettier": "^2.4.1",
+    "prettier-plugin-solidity": "^1.0.0-beta.18"
+  },
+  "dependencies": {
+    "@nomiclabs/hardhat-etherscan": "^2.1.7",
+    "@openzeppelin/contracts": "^4.3.2",
+    "keccak256": "^1.0.3",
+    "merkletreejs": "^0.2.24"
+  }
+}
