@@ -9,10 +9,6 @@ import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/utils/Strings.sol';
 import '@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol';
 
-// FIXME: Reintroduce the core team role since that will be used to manage payments to members.
-// In this, make sure that there is only one default admin, and that default admin is the deployer
-// And that default admin role is the only role that could manage the core team role.
-
 /**
  *  @title Meta DAO NFT
  *
@@ -35,6 +31,9 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
 
     /// @dev The address of the community wallet
     address public constant COMMUNITY_WALLET_ADDRESS = 0x3a919e034318ac01aE8C313fabDB78c2E658CCb2;
+
+    /// @dev A role for people who are project founders.
+    bytes32 public constant FOUNDER_ROLE = keccak256('FOUNDER_ROLE');
 
     /// @dev The maximum number of mints set by the contract admins.
     uint256 public maxMints;
@@ -66,14 +65,18 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
 
     /**
      * @notice Deploys the contract, sets the baseTokenURI, sets the the max
-     * mints and disables public minting.
+     * mints, roles for founders and disables public minting.
      *
      * @param initialMaxMints The maximum number of mints. Cannot be greater than 10,000.
      */
-    constructor(uint256 initialMaxMints) ERC721('Meta DAO NFT', 'METADAONFT') {
+    constructor(uint256 initialMaxMints, address[] memory founders) ERC721('Meta DAO NFT', 'METADAONFT') {
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
         disallowPublicMinting();
         setMaxMints(initialMaxMints);
+
+        for (uint256 i = 0; i < founders.length; i++) {
+            _setupRole(FOUNDER_ROLE, founders[i]);
+        }
     }
 
     /**
@@ -250,18 +253,17 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
      * the admins of the contract. Can only be run by admins, and if there's
      * enough funds in the contract to withdraw. Funds from sales can be
      *  withdrawn any time - 75% sent to the DAO wallet, and the remaining 25%
-     * split evenly among core teammember wallets, which can be added or remove
+     * split evenly among founder wallets, which can be added or remove
      * at any time by admins.
      *
      */
     function withdrawAll() public onlyAdmin {
-        // FIXME: Create a separate role that receive funds, separate to admins (e.g. Core Team.)
         uint256 balance = address(this).balance;
-        uint256 adminCount = getRoleMemberCount(DEFAULT_ADMIN_ROLE);
+        uint256 founderCount = getRoleMemberCount(FOUNDER_ROLE);
         uint256 daoBalance;
         require(balance > 0, 'Nothing to withdraw.');
 
-        if (adminCount == 0) {
+        if (founderCount == 0) {
             daoBalance = balance;
         } else {
             daoBalance = (balance * 75) / 100;
@@ -270,9 +272,9 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
         _withdraw(COMMUNITY_WALLET_ADDRESS, daoBalance);
 
         uint256 founderBalance = balance - daoBalance;
-        for (uint256 i = 0; i < adminCount; i++) {
-            address member = getRoleMember(DEFAULT_ADMIN_ROLE, i);
-            _withdraw(member, founderBalance / adminCount);
+        for (uint256 i = 0; i < founderCount; i++) {
+            address member = getRoleMember(FOUNDER_ROLE, i);
+            _withdraw(member, founderBalance / founderCount);
         }
     }
 
