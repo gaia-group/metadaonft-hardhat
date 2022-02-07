@@ -1,5 +1,3 @@
-// This is a script for deploying your contracts. You can adapt it to deploy
-// yours, or create new ones.
 async function main() {
   // This is just a convenience check
   if (network.name === 'hardhat') {
@@ -10,14 +8,17 @@ async function main() {
     )
   }
 
-  // ethers is avaialble in the global scope
+  // FIXME: Need to populate this with the correct signer address
   const [deployer] = await ethers.getSigners()
   console.log('Deploying the contracts with the account:', await deployer.getAddress())
 
   console.log('Account balance:', (await deployer.getBalance()).toString())
 
   const MetaDaoNft = await ethers.getContractFactory('MetaDaoNft')
-  const initialMaxMints = 1000
+  const chancellor = '0x32BF741D6DF2C00A0687b834FeC84D2A2B80388c'
+  const archit3c = '0x25d53e88ae482e6612bed27d040b370c7e09838c'
+  const founders = [archit3c, chancellor]
+  const artist = '0x627137FC6cFa3fbfa0ed936fB4B5d66fB383DBE8'
   const token = await MetaDaoNft.deploy(initialMaxMints)
   await token.deployed()
 
