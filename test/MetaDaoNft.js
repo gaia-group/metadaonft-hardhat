@@ -14,6 +14,8 @@ describe('Token contract', function () {
   let price
   let error
   let communityWalletAddress
+  let proof
+  let permissions
 
   async function isAddressWhitelisted(address, whitelistTree) {
     const { proof, positions } = getWhitelistParams(address, whitelistTree)
@@ -22,12 +24,10 @@ describe('Token contract', function () {
 
   beforeEach(async function () {
     Token = await ethers.getContractFactory('MetaDaoNft')
-    ;[owner, addr1, addr2, addr3] = await ethers.getSigners()
+    ;[owner, addr1, addr2, addr3, artist] = await ethers.getSigners()
 
-    maxMints = 1000
-    contract = await Token.deploy(maxMints, [])
+    contract = await Token.deploy([], artist.address)
     price = await contract.PRICE()
-    communityWalletAddress = await contract.COMMUNITY_WALLET_ADDRESS()
     await contract.deployed()
   })
 
@@ -55,13 +55,7 @@ describe('Token contract', function () {
 
   describe('PRICE', function () {
     it('should return the correct price', async function () {
-      expect(price).to.equal(ethers.utils.parseEther('.08'))
-    })
-  })
-
-  describe('COMMUNITY_WALLET_ADDRESS', function () {
-    it('should return the correct address', async function () {
-      expect(communityWalletAddress).to.equal('0x3a919e034318ac01aE8C313fabDB78c2E658CCb2')
+      expect(price).to.equal(ethers.utils.parseEther('.04'))
     })
   })
 
@@ -71,9 +65,15 @@ describe('Token contract', function () {
     })
   })
 
-  describe('MAX_MINT_HARDCAP', function () {
-    it('should return the correct hardcap', async function () {
-      expect(await contract.MAX_MINT_HARDCAP()).to.equal(10000)
+  describe('MAX_MINTS', function () {
+    it('should return the correct max number of mints', async function () {
+      expect(await contract.MAX_MINTS()).to.equal(4444)
+    })
+  })
+
+  describe('owner', function () {
+    it('should return the correct owner', async function () {
+      expect(await contract.owner()).to.equal(owner.address)
     })
   })
 
@@ -136,7 +136,7 @@ describe('Token contract', function () {
 
     beforeEach(async function () {
       founders = Array.from({ length: 3 }, () => ethers.Wallet.createRandom().address)
-      contract = await Token.deploy(1337, founders)
+      contract = await Token.deploy(founders, artist.address)
       await contract.deployed()
     })
 
@@ -145,6 +145,11 @@ describe('Token contract', function () {
       founders.forEach(async (address) => {
         expect(await contract.hasRole(founderRole, address)).to.equal(true)
       })
+    })
+
+    it('sets the provided addresses as artist', async function () {
+      const artistRole = await contract.ARTIST_ROLE()
+      expect(await contract.hasRole(artistRole, artist.address)).to.equal(true)
     })
 
     it('sets the sender as an admin', async function () {
@@ -159,19 +164,6 @@ describe('Token contract', function () {
     it('disallows public minting', async function () {
       expect(await contract.isPublicMintingAllowed()).to.equal(false)
     })
-
-    it('sets the max mints to the provided value', async function () {
-      expect(await contract.maxMints()).to.equal(1337)
-    })
-
-    it('fails if the max mints are greater than 10,000', async function () {
-      try {
-        contract = await Token.deploy(10001, [])
-      } catch (err) {
-        error = err
-      }
-      expect(error.message).to.contain('Cannot set max to be more than 10k.')
-    })
   })
 
   describe('Withdrawing', function () {
@@ -185,7 +177,7 @@ describe('Token contract', function () {
       expectedBalance = price.mul(numMints)
 
       for (i = 0; i < numMints; i++) {
-        await contract.connect(signers[i]).mint(signers[i].address, [], [], { value: price })
+        await contract.connect(signers[i]).mint(signers[i].address, 1, [], [], { value: price })
       }
     })
 
@@ -219,12 +211,10 @@ describe('Token contract', function () {
     })
 
     describe('with no FOUNDER_ROLE holders on contract', function () {
-      it('sends 100% to the community wallet', async function () {
-        const communityWallet = contract.provider.getSigner(await contract.COMMUNITY_WALLET_ADDRESS())
-
-        const before = await communityWallet.getBalance()
+      it('sends 100% to the artist', async function () {
+        const before = await artist.getBalance()
         await contract.withdrawAll()
-        const after = await communityWallet.getBalance()
+        const after = await artist.getBalance()
         expect(after.sub(before)).to.equal(expectedBalance)
       })
     })
@@ -234,18 +224,8 @@ describe('Token contract', function () {
         await contract.connect(owner).grantRole(await contract.FOUNDER_ROLE(), owner.address)
       })
 
-      it('sends 75% to the community wallet', async function () {
-        expectedBalance = expectedBalance.mul(75).div(100)
-        const communityWallet = contract.provider.getSigner(await contract.COMMUNITY_WALLET_ADDRESS())
-
-        const before = await communityWallet.getBalance()
-        await contract.withdrawAll()
-        const after = await communityWallet.getBalance()
-        expect(after.sub(before)).to.equal(expectedBalance)
-      })
-
-      it('sends the remainings 25% to the FOUNDER (accounting for gas)', async function () {
-        expectedBalance = expectedBalance.mul(25).div(100)
+      it('sends the remainings 90% to the FOUNDER (accounting for gas)', async function () {
+        expectedBalance = expectedBalance.mul(90).div(100)
         const before = await owner.getBalance()
         const tx = await contract.withdrawAll()
         const receipt = await tx.wait()
@@ -254,42 +234,44 @@ describe('Token contract', function () {
         const gasPaid = receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice)
         expect(after.sub(before)).to.equal(expectedBalance.sub(gasPaid))
       })
+
+      it('sends 10% to the ARTIST', async function () {
+        expectedBalance = expectedBalance.mul(10).div(100)
+        const before = await artist.getBalance()
+        await contract.withdrawAll()
+
+        const after = await artist.getBalance()
+        expect(after.sub(before)).to.equal(expectedBalance)
+      })
     })
 
-    describe('with three people on FOUNDER_ROLE', function () {
+    describe('with two people on FOUNDER_ROLE', function () {
       beforeEach(async function () {
         const FOUNDER_ROLE = await contract.FOUNDER_ROLE()
-        await contract.connect(owner).grantRole(FOUNDER_ROLE, owner.address)
         await contract.connect(owner).grantRole(FOUNDER_ROLE, addr1.address)
         await contract.connect(owner).grantRole(FOUNDER_ROLE, addr2.address)
       })
 
-      it('sends 75% to the community wallet', async function () {
-        const communityWallet = contract.provider.getSigner(await contract.COMMUNITY_WALLET_ADDRESS())
-        expectedBalance = expectedBalance.mul(75).div(100)
-
-        const before = await communityWallet.getBalance()
+      it('sends 10% to the ARTIST', async function () {
+        expectedBalance = expectedBalance.mul(10).div(100)
+        const before = await artist.getBalance()
         await contract.withdrawAll()
-        const after = await communityWallet.getBalance()
+
+        const after = await artist.getBalance()
         expect(after.sub(before)).to.equal(expectedBalance)
       })
 
-      it('sends an equal share of the remaining 25% to all people with FOUNDER_ROLE', async function () {
-        expectedBalance = expectedBalance.mul(25).div(100).div(3)
+      it('sends an equal share of the remaining 90% to the two FOUNDER_ROLE holders', async function () {
+        expectedBalance = expectedBalance.mul(90).div(100).div(2)
 
-        const ownerBefore = await owner.getBalance()
         const addr1Before = await addr1.getBalance()
         const addr2Before = await addr2.getBalance()
 
-        const tx = await contract.withdrawAll()
-        const receipt = await tx.wait()
-        const gasPaid = receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice)
+        await contract.withdrawAll()
 
-        const ownerAfter = await owner.getBalance()
         const addr1After = await addr1.getBalance()
         const addr2After = await addr2.getBalance()
 
-        expect(ownerAfter.sub(ownerBefore)).to.equal(expectedBalance.sub(gasPaid))
         expect(addr1After.sub(addr1Before)).to.equal(expectedBalance)
         expect(addr2After.sub(addr2Before)).to.equal(expectedBalance)
       })
@@ -297,238 +279,287 @@ describe('Token contract', function () {
   })
 
   describe('Minting', function () {
-    beforeEach(async function () {
-      // Opening public minting simplifies most of the checks on minting logic.
-      await contract.connect(owner).allowPublicMinting()
-    })
+    let numMints, value
 
-    describe('when the address has already minted', function () {
-      beforeEach(async function () {
-        await contract.connect(addr1).mint(addr1.address, [], [], { value: price })
-      })
-
+    describe('when no recipient provided', function () {
       it('generates an error', async function () {
         try {
-          await contract.mint(addr1.address, [], [], { value: price })
+          await contract.connect(addr1).mint(null, 5, [], [])
           throw new Error('was not supposed to succeed')
         } catch (err) {
           error = err
         }
-        expect(error.message).to.contain('Already minted')
+        expect(error.message).to.contain('invalid address')
       })
     })
 
-    describe('when the address has received a mint from elsehwere', function () {
-      beforeEach(async function () {
-        await contract.connect(addr2).mint(addr2.address, [], [], { value: price })
-        await contract.connect(addr2)['safeTransferFrom(address,address,uint256)'](addr2.address, addr1.address, 1)
-      })
-
+    describe('when no numMints provided', function () {
       it('generates an error', async function () {
         try {
-          await contract.mint(addr1.address, [], [], { value: price })
+          await contract.connect(addr1).mint(addr1.address, null, [], [])
           throw new Error('was not supposed to succeed')
         } catch (err) {
           error = err
         }
-        expect(error.message).to.contain('Already minted')
+        expect(error.message).to.contain('invalid BigNumber value')
       })
     })
 
-    describe('when supply is near maxMints', function () {
-      it('correctly handles mint attempts at the end of mint', async function () {
-        await contract.setMaxMints(1)
-
-        // Mint the last one
-        await contract.mint(addr1.address, [], [], { value: price })
-        expect(await contract.balanceOf(addr1.address)).to.equal('1')
-
-        // Minting when none left
-        try {
-          await contract.mint(addr1.address, [], [], { value: price })
-          throw new Error('was not supposed to succeed')
-        } catch (err) {
-          error = err
-        }
-        expect(error.message).to.contain('Soldout!')
-      })
-    })
-
-    describe('when all required params not provided', function () {
+    describe('when no proof provided', function () {
       it('generates an error', async function () {
         try {
-          await contract.mint(addr1.address)
+          await contract.connect(addr1).mint(addr1.address, 1, null, [])
           throw new Error('was not supposed to succeed')
         } catch (err) {
           error = err
         }
-        expect(error.message).to.contain('missing argument')
+        expect(error.message).to.contain('invalid value for array')
       })
     })
 
-    describe('when minting with the right amount of ETH', function () {
-      beforeEach(async function () {
-        await contract.mint(addr1.address, [], [], { value: price })
-      })
-
-      it('creates 1 tokens and deposits it for the specified address', async function () {
-        expect(await contract.balanceOf(addr1.address)).to.equal('1')
-        expect(await contract.ownerOf('1')).to.equal(addr1.address)
-      })
-
-      it('mints the token with the correct tokenURI', async function () {
-        const tokenURI = await contract.tokenURI(1)
-        const [header, body] = tokenURI.split(',')
-        const { name, description, image } = JSON.parse(base64.decode(body))
-
-        expect(header).to.equal('data:application/json;base64')
-        expect(name).to.equal('Meta DAO #1')
-        expect(description).to.equal('The Meta DAO Pass represents your membership, granting access to Meta DAO perks.')
-        expect(image).to.equal('https://ipfs.io/ipfs/Qmf1EruEbcdwfghq34RoWNgeh9edZSGKsAckk3nD6MrrvC')
-      })
-    })
-
-    describe('when minting with too little ETH', function () {
+    describe('when no positions provided', function () {
       it('generates an error', async function () {
         try {
-          await contract.mint(addr1.address, [], [], { value: price.sub(1) })
+          await contract.connect(addr1).mint(addr1.address, 1, [], null)
           throw new Error('was not supposed to succeed')
         } catch (err) {
           error = err
         }
-        expect(error.message).to.contain('Value below price')
+        expect(error.message).to.contain('invalid value for array')
       })
     })
 
-    describe('when minting with too much ETH', function () {
-      it('mints 1 token', async function () {
-        await contract.mint(addr1.address, [], [], { value: price.add(1000000) })
-        expect(await contract.balanceOf(addr1.address)).to.equal('1')
-      })
-
-      it('deducts the full value of the tx + gas from sender', async function () {
-        const paidAmount = price.add(1000000)
-        const before = await addr1.getBalance()
-        await contract.connect(addr1).mint(addr1.address, [], [], { value: price.add(1000000) })
-        const after = await addr1.getBalance()
-        expect(before.sub(after)).to.be.above(paidAmount)
-      })
-
-      it('deposits the full amount into the contract address', async function () {
-        const paidAmount = price.add(1000000)
-        const contractAddress = await contract.address
-        const before = await contract.provider.getBalance(contractAddress)
-        await contract.connect(addr1).mint(addr1.address, [], [], { value: paidAmount })
-        const after = await contract.provider.getBalance(contractAddress)
-        expect(after.sub(before)).to.equal(paidAmount)
-      })
-    })
-
-    describe('when minting is open to the public', function () {
-      it('non-whitelisted addresses are able to mint', async function () {
-        await contract.mint(addr1.address, [], [], { value: price })
-        expect(await contract.balanceOf(addr1.address)).to.equal('1')
-      })
-
-      it('whitelisted addresses are able to mint', async function () {
-        // Add addr1 to whitelist
-        const whitelistedAddresses = Array.from({ length: 100 }, () => ethers.Wallet.createRandom().address).concat(
-          addr1.address
-        )
-        tree = createWhitelistTree(whitelistedAddresses)
-        const { proof, positions } = getWhitelistParams(addr1.address, tree)
-        await contract.connect(owner).updateWhitelist(rootFrom(tree))
-
-        await contract.mint(addr1.address, proof, positions, { value: price })
-
-        expect(await contract.balanceOf(addr1.address)).to.equal('1')
-      })
-    })
-
-    describe('when minting is only open to the whitelist', function () {
-      beforeEach(async function () {
-        await contract.connect(owner).disallowPublicMinting()
-      })
-
-      it('non-whitelisted addresses are unable to mint', async function () {
+    describe('when numMints is 0', function () {
+      it('generates an error', async function () {
         try {
-          await contract.mint(addr1.address, [], [], { value: price })
+          await contract.connect(addr1).mint(addr1.address, 0, [], [])
           throw new Error('was not supposed to succeed')
         } catch (err) {
           error = err
         }
-        expect(error.message).to.contain('Not on whitelist.')
-      })
-
-      it('whitelisted addresses are able to mint', async function () {
-        // Add addr1 to whitelist
-        const whitelistedAddresses = Array.from({ length: 100 }, () => ethers.Wallet.createRandom().address).concat(
-          addr1.address
-        )
-        tree = createWhitelistTree(whitelistedAddresses)
-        const { proof, positions } = getWhitelistParams(addr1.address, tree)
-        await contract.connect(owner).updateWhitelist(rootFrom(tree))
-
-        await contract.mint(addr1.address, proof, positions, { value: price })
-
-        expect(await contract.balanceOf(addr1.address)).to.equal('1')
+        expect(error.message).to.contain('Must provide an amount to mint.')
       })
     })
-  })
 
-  describe('Changing max mints', function () {
-    it('fails if the minter does not have admin role', async function () {
-      try {
-        await contract.connect(addr1).setMaxMints(100)
-      } catch (err) {
-        error = err
-      }
-      expect(error.message).to.contain('Must be an admin')
+    describe('when numMints is negative', function () {
+      it('generates an error', async function () {
+        try {
+          await contract.connect(addr1).mint(addr1.address, -1, [], [])
+          throw new Error('was not supposed to succeed')
+        } catch (err) {
+          error = err
+        }
+        expect(error.message).to.contain('value out-of-bounds')
+      })
     })
 
-    it('changes the max mints if the minter has admin role and the value is under 10k', async function () {
-      expect(await contract.maxMints()).to.equal('1000')
-      await contract.connect(owner).setMaxMints(100)
-      expect(await contract.maxMints()).to.equal('100')
+    function itShouldSuccessfullyMint(numMints) {
+      describe(`when the number of mints is ${numMints}`, function () {
+        describe('with the correct amount of ETH', function () {
+          beforeEach(function () {
+            value = price.mul(numMints)
+          })
+
+          it('mints one to the intended recipient', async function () {
+            await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+            expect(await contract.balanceOf(addr1.address)).to.equal(numMints.toString())
+          })
+
+          it('captures the payment on contract', async function () {
+            await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+            const contractBalance = await ethers.provider.getBalance(contract.address)
+            expect(contractBalance).to.equal(value.toString())
+          })
+        })
+
+        describe('with too much ETH', function () {
+          beforeEach(function () {
+            value = price.mul(numMints).add(price)
+          })
+
+          it('mints one to the intended recipient', async function () {
+            await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+            expect(await contract.balanceOf(addr1.address)).to.equal(numMints.toString())
+          })
+
+          it('captures the full payment on contract (keeps the change)', async function () {
+            await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+            const contractBalance = await ethers.provider.getBalance(contract.address)
+            expect(contractBalance).to.equal(value.toString())
+          })
+        })
+
+        describe('with too little ETH', function () {
+          beforeEach(function () {
+            value = price.mul(numMints).sub(1)
+          })
+
+          it('does not mint to the recipient', async function () {
+            try {
+              await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+            } catch (err) {}
+            expect(await contract.balanceOf(addr1.address)).to.equal('0')
+          })
+
+          it('generates an error', async function () {
+            try {
+              await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+              throw new Error('was not supposed to succeed')
+            } catch (err) {
+              error = err
+            }
+            expect(error.message).to.contain('Value below price')
+          })
+        })
+      })
+    }
+
+    function itShouldNotSuccessfullyMint(numMints) {
+      describe(`when the number of mints is ${numMints}`, function () {
+        beforeEach(function () {
+          value = price.mul(numMints)
+        })
+
+        it('does not mint to the recipient', async function () {
+          try {
+            await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+          } catch (err) {}
+          expect(await contract.balanceOf(addr1.address)).to.equal('0')
+        })
+
+        it('generates an error', async function () {
+          try {
+            await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+            throw new Error('was not supposed to succeed')
+          } catch (err) {
+            error = err
+          }
+          expect(error.message).to.contain('Not on whitelist')
+        })
+      })
+    }
+
+    describe('when owner is minting', function () {
+      it('allows minting any amount for free', async function () {
+        await contract.connect(owner).mint(addr1.address, 12, [], [], { value: 0 })
+        expect(await contract.balanceOf(addr1.address)).to.equal('12')
+      })
     })
 
-    it('changes the max mints if the minter has admin role and the value is 10k', async function () {
-      expect(await contract.maxMints()).to.equal('1000')
-      await contract.connect(owner).setMaxMints(10000)
-      expect(await contract.maxMints()).to.equal('10000')
+    describe('during whitelist sale', function () {
+      describe('when sender is on whitelist', function () {
+        beforeEach(async function () {
+          // Need at least 2 addresses on whitelist. Cannot make a tree with only one.
+          const whitelistedAddresses = [ethers.Wallet.createRandom().address, addr2.address]
+
+          tree = createWhitelistTree(whitelistedAddresses)
+          ;({ proof, positions } = getWhitelistParams(addr2.address, tree))
+          await contract.connect(owner).updateWhitelist(rootFrom(tree))
+        })
+
+        for (let numMints = 1; numMints <= 2; numMints++) itShouldSuccessfullyMint(numMints)
+
+        describe('when the number of mints is 3', function () {
+          beforeEach(function () {
+            numMints = 3
+            value = price.mul(numMints)
+          })
+
+          it('does not mint to the recipient', async function () {
+            try {
+              await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+            } catch (err) {}
+            expect(await contract.balanceOf(addr1.address)).to.equal('0')
+          })
+
+          it('generates an error', async function () {
+            try {
+              await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+              throw new Error('was not supposed to succeed')
+            } catch (err) {
+              error = err
+            }
+            expect(error.message).to.contain('Can mint a max of 2 during presale')
+          })
+        })
+      })
+
+      describe('when sender is not on whitelist', function () {
+        beforeEach(function () {
+          proof = positions = []
+        })
+
+        for (let numMints = 1; numMints <= 2; numMints++) itShouldNotSuccessfullyMint(numMints)
+      })
     })
 
-    it('fails the max mints if the minter has admin role and the value is over 10k', async function () {
-      try {
-        await contract.connect(owner).setMaxMints(10001)
-      } catch (err) {
-        error = err
-      }
-      expect(error.message).to.contain('Cannot set max to be more than 10k.')
+    describe('during public sale', function () {
+      beforeEach(async function () {
+        await contract.connect(owner).allowPublicMinting()
+        proof = positions = []
+      })
+
+      for (let numMints = 1; numMints <= 5; numMints++) itShouldSuccessfullyMint(numMints)
+
+      describe('when the number of mints is 6', function () {
+        beforeEach(function () {
+          numMints = 6
+          value = price.mul(numMints)
+        })
+
+        it('does not mint to the recipient', async function () {
+          try {
+            await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+          } catch (err) {}
+          expect(await contract.balanceOf(addr1.address)).to.equal('0')
+        })
+
+        it('generates an error', async function () {
+          try {
+            await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+            throw new Error('was not supposed to succeed')
+          } catch (err) {
+            error = err
+          }
+          expect(error.message).to.contain('Can mint a max of 5 during public sale')
+        })
+      })
     })
 
-    it('closes minting if set below supply, and reopens when set above it', async function () {
-      await contract.connect(owner).allowPublicMinting()
-      await contract.connect(owner).setMaxMints(0)
-      try {
-        await contract.mint(addr1.address, [], [], { value: price })
-      } catch (err) {
-        error = err
-      }
-      expect(error.message).to.contain('Soldout!')
+    // FIXME: WRITE THESE
 
-      await contract.connect(owner).setMaxMints(1)
-      await contract.mint(addr1.address, [], [], { value: price })
-      expect(await contract.balanceOf(addr1.address)).to.equal('1')
+    // When supply has 5 left
+    //   when minting 1 -> works
+    //   when minting 2 -> works
+    //   when minting 3 -> works
+    //   when minting 4 -> works
+    //   when minting 5 -> works
+    //   when minting 6 -> error
 
-      try {
-        await contract.mint(addr1.address, [], [], { value: price })
-      } catch (err) {
-        error = err
-      }
-      expect(error.message).to.contain('Soldout!')
-      expect(await contract.balanceOf(addr1.address)).to.equal('1')
-    })
+    // When supply has 4 left
+    //   when minting 1 -> works
+    //   when minting 2 -> works
+    //   when minting 3 -> works
+    //   when minting 4 -> works
+    //   when minting 5 -> error
+
+    // When supply has 3 left
+    //   when minting 1 -> works
+    //   when minting 2 -> works
+    //   when minting 3 -> works
+    //   when minting 4 -> error
+
+    // When supply has 2 left
+    //   when minting 1 -> works
+    //   when minting 2 -> works
+    //   when minting 3 -> error
+
+    // When supply has 1 left
+    //   when minting 1 -> works
+    //   when minting 2 -> error
+
+    // When supply has 0 left
+    //   when minting 1 -> error
   })
 
   describe('when public minting is not allowed', function () {
@@ -543,7 +574,7 @@ describe('Token contract', function () {
       it('allows the address to mint', async function () {
         const { proof, positions } = getWhitelistParams(addr1.address, tree)
         await contract.connect(owner).updateWhitelist(rootFrom(tree))
-        await contract.mint(addr1.address, proof, positions, { value: price })
+        await contract.connect(addr1).mint(addr1.address, 1, proof, positions, { value: price })
 
         expect(await contract.balanceOf(addr1.address)).to.equal('1')
       })
@@ -552,7 +583,7 @@ describe('Token contract', function () {
     describe('when the address is not whitelisted', function () {
       it('fails to mint', async function () {
         try {
-          await contract.mint(addr1.address, [], [], { value: price })
+          await contract.connect(addr1).mint(addr1.address, 1, [], [], { value: price })
         } catch (err) {
           error = err
         }
@@ -586,7 +617,7 @@ describe('Token contract', function () {
       it('allows public minting', async function () {
         await contract.connect(owner).allowPublicMinting()
 
-        await contract.mint(addr1.address, [], [], { value: price })
+        await contract.connect(addr1).mint(addr1.address, 1, [], [], { value: price })
         expect(await contract.balanceOf(addr1.address)).to.equal('1')
       })
     })
@@ -608,7 +639,7 @@ describe('Token contract', function () {
       it('allows the address to mint', async function () {
         const { proof, positions } = getWhitelistParams(addr1.address, tree)
         await contract.connect(owner).updateWhitelist(rootFrom(tree))
-        await contract.mint(addr1.address, proof, positions, { value: price })
+        await contract.connect(addr1).mint(addr1.address, 1, proof, positions, { value: price })
 
         expect(await contract.balanceOf(addr1.address)).to.equal('1')
       })
@@ -618,7 +649,7 @@ describe('Token contract', function () {
       it('allows the address to mint', async function () {
         const { proof, positions } = getWhitelistParams(addr1.address, tree)
         await contract.connect(owner).updateWhitelist(rootFrom(tree))
-        await contract.mint(addr1.address, proof, positions, { value: price })
+        await contract.connect(addr1).mint(addr1.address, 1, proof, positions, { value: price })
 
         expect(await contract.balanceOf(addr1.address)).to.equal('1')
       })
@@ -649,7 +680,7 @@ describe('Token contract', function () {
       it('disallows public minting', async function () {
         try {
           await contract.connect(owner).disallowPublicMinting()
-          await contract.mint(addr1.address, [], [], { value: price })
+          await contract.connect(addr1).mint(addr1.address, 1, [], [], { value: price })
         } catch (err) {
           error = err
         }

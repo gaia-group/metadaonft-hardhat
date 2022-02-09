@@ -24,19 +24,16 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
     using Strings for uint256;
 
     /// @dev The price of a single mint in Ether
-    uint256 public constant PRICE = 0.08 ether;
+    uint256 public constant PRICE = 0.04 ether;
 
     /// @dev Hard cap on the maximum number of mints. No one can set max mints higher than the hard cap.
-    uint256 public constant MAX_MINT_HARDCAP = 10000;
-
-    /// @dev The address of the community wallet
-    address public constant COMMUNITY_WALLET_ADDRESS = 0x3a919e034318ac01aE8C313fabDB78c2E658CCb2;
+    uint256 public constant MAX_MINTS = 4444;
 
     /// @dev A role for people who are project founders.
     bytes32 public constant FOUNDER_ROLE = keccak256('FOUNDER_ROLE');
 
-    /// @dev The maximum number of mints set by the contract admins.
-    uint256 public maxMints;
+    /// @dev A role for the artist.
+    bytes32 public constant ARTIST_ROLE = keccak256('ARTIST_ROLE');
 
     /**
      * @dev Indicates if public minting is opened. If true, addresses not on the
@@ -67,13 +64,14 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
      * @notice Deploys the contract, sets the baseTokenURI, sets the the max
      * mints, roles for founders and disables public minting.
      *
-     * @param initialMaxMints The maximum number of mints. Cannot be greater than 10,000.
+     * @param founders The addresses of founders to be granted founder role.
+     * @param artist The address of the artist to be granted artist role.
      */
-    constructor(uint256 initialMaxMints, address[] memory founders) ERC721('Meta DAO NFT', 'METADAONFT') {
+    constructor(address[] memory founders, address artist) ERC721('Meta DAO NFT', 'METADAONFT') {
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
         disallowPublicMinting();
-        setMaxMints(initialMaxMints);
 
+        _setupRole(ARTIST_ROLE, artist);
         for (uint256 i = 0; i < founders.length; i++) {
             _setupRole(FOUNDER_ROLE, founders[i]);
         }
@@ -87,13 +85,14 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
      * @return The tokenURI for the given tokenId. All token IDs have the same metadata, with the exception of the ID
      */
     function tokenURI(uint256 tokenId) public pure override returns (string memory) {
+        // FIXME: Return token URI to JSON on IPFS
         string memory json = Base64.encode(
             bytes(
                 string(
                     abi.encodePacked(
                         '{"name": "Meta DAO #',
                         tokenId.toString(),
-                        '", "description": "The Meta DAO Pass represents your membership, granting access to Meta DAO perks.", "image": "https://ipfs.io/ipfs/Qmf1EruEbcdwfghq34RoWNgeh9edZSGKsAckk3nD6MrrvC"}'
+                        '", "description": "A collectible piece of land artwork, crafted by 8thproject, that you can treasure on the blockchain forever.", "image": "https://ipfs.io/ipfs/Qmf1EruEbcdwfghq34RoWNgeh9edZSGKsAckk3nD6MrrvC"}'
                     )
                 )
             )
@@ -147,6 +146,7 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
      * @notice Mints a new token for the recipient.
      *
      * @param recipient The address to receive the newly minted tokens
+     * @param numMints The number of mints to mint
      * @param _proof Array of hex values denoting the kekkack hashes of leaves
      * in the merkle root tree leading to verified address. Used to verify the
      * recipient is whitelisted, if minting during whitelist period.
@@ -157,15 +157,27 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
      */
     function mint(
         address recipient,
+        uint8 numMints,
         bytes32[] memory _proof,
         uint256[] memory _positions
     ) public payable {
-        require(isPublicMintingAllowed || verifyWhitelist(recipient, _proof, _positions), 'Not on whitelist.');
-        require(totalSupply() < maxMints, 'Soldout!');
-        require(msg.value >= PRICE, 'Value below price');
-        require(balanceOf(recipient) < 1, 'Already minted');
+        require(numMints > 0, 'Must provide an amount to mint.');
+        require(totalSupply() < MAX_MINTS, 'Soldout!');
 
-        _mintAnElement(recipient);
+        if (!hasRole(DEFAULT_ADMIN_ROLE, _msgSender())) {
+            require(msg.value >= PRICE * numMints, 'Value below price');
+
+            if (isPublicMintingAllowed) {
+                require(numMints <= 5, 'Can mint a max of 5 during public sale');
+            } else {
+                require(verifyWhitelist(_msgSender(), _proof, _positions), 'Not on whitelist.');
+                require(numMints <= 2, 'Can mint a max of 2 during presale');
+            }
+        }
+
+        for (uint256 i = 0; i < numMints; i++) {
+            _mintAnElement(recipient);
+        }
     }
 
     /**
@@ -182,18 +194,6 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
      */
     function disallowPublicMinting() public onlyAdmin {
         isPublicMintingAllowed = false;
-    }
-
-    /**
-     * @notice Sets the maximum number of mints, which can be used to throttle
-     * the speed of minting or limit the supply of the NFT collection to only
-     * the amount of mints necessary for the desired land acquisition
-     *
-     * @param newMaxMints The maximum number of mints. Cannot be more than 10k.
-     */
-    function setMaxMints(uint256 newMaxMints) public onlyAdmin {
-        require(newMaxMints <= MAX_MINT_HARDCAP, 'Cannot set max to be more than 10k.');
-        maxMints = newMaxMints;
     }
 
     /**
@@ -249,33 +249,25 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
     }
 
     /**
-     * @notice Withdraws all funds from contract address to the DAO wallet and
-     * the admins of the contract. Can only be run by admins, and if there's
-     * enough funds in the contract to withdraw. Funds from sales can be
-     *  withdrawn any time - 75% sent to the DAO wallet, and the remaining 25%
-     * split evenly among founder wallets, which can be added or remove
-     * at any time by admins.
+     * @notice Withdraws all funds from contract address. Founders get 90%,
+     * artist gets remaining 10%.
      *
      */
     function withdrawAll() public onlyAdmin {
         uint256 balance = address(this).balance;
         uint256 founderCount = getRoleMemberCount(FOUNDER_ROLE);
-        uint256 daoBalance;
         require(balance > 0, 'Nothing to withdraw.');
 
-        if (founderCount == 0) {
-            daoBalance = balance;
-        } else {
-            daoBalance = (balance * 75) / 100;
-        }
-
-        _withdraw(COMMUNITY_WALLET_ADDRESS, daoBalance);
-
-        uint256 founderBalance = balance - daoBalance;
+        // 90% split between founders
+        uint256 founderBalance = (balance * 9) / 10;
         for (uint256 i = 0; i < founderCount; i++) {
             address member = getRoleMember(FOUNDER_ROLE, i);
             _withdraw(member, founderBalance / founderCount);
         }
+
+        uint256 artistBalance = address(this).balance; // Should be the remaining 10%.
+        address artist = getRoleMember(ARTIST_ROLE, 0);
+        _withdraw(artist, artistBalance);
     }
 
     /**
