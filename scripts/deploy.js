@@ -19,7 +19,8 @@ async function main() {
   const archit3c = '0x25d53e88ae482e6612bed27d040b370c7e09838c'
   const founders = [archit3c, chancellor]
   const artist = '0x627137FC6cFa3fbfa0ed936fB4B5d66fB383DBE8'
-  const token = await MetaDaoNft.deploy(initialMaxMints)
+  const baseURI = 'ipfs://QmQscUmBUYcbRsJmHueLAYBM5egSoS2iKkUbCKteFC68gd/'
+  const token = await MetaDaoNft.deploy(founders, artist, baseURI)
   await token.deployed()
 
   console.log('Token address:', token.address)

@@ -35,6 +35,9 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
     /// @dev A role for the artist.
     bytes32 public constant ARTIST_ROLE = keccak256('ARTIST_ROLE');
 
+    /// @dev Holds the value of the baseURI for token generation
+    string private _baseTokenURI;
+
     /**
      * @dev Indicates if public minting is opened. If true, addresses not on the
      * whitelist can mint tokens. If false, the address must be on the whitelist
@@ -47,9 +50,6 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
      * off-chain to save gas, and the root is stored on contract for verification.
      */
     bytes32 private _whitelistMerkleRoot;
-
-    /// @dev The  baseTokenURI that is used for all mints.
-    string private _baseTokenURI;
 
     /// @dev An event emitted when the mint was successful.
     event SuccessfulMint(uint256 tokenId, address recipient);
@@ -67,37 +67,24 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
      * @param founders The addresses of founders to be granted founder role.
      * @param artist The address of the artist to be granted artist role.
      */
-    constructor(address[] memory founders, address artist) ERC721('Meta DAO NFT', 'METADAONFT') {
+    constructor(
+        address[] memory founders,
+        address artist,
+        string memory newBaseURI
+    ) ERC721('Meta DAO NFT', 'METADAONFT') {
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
         disallowPublicMinting();
+        _baseTokenURI = newBaseURI;
 
         _setupRole(ARTIST_ROLE, artist);
+
         for (uint256 i = 0; i < founders.length; i++) {
             _setupRole(FOUNDER_ROLE, founders[i]);
         }
     }
 
-    /**
-     * @notice Retrieves the tokenURI for a provided tokenid.
-     *
-     * @param tokenId The tokenId of the token to fetch the tokenURI.
-     *
-     * @return The tokenURI for the given tokenId. All token IDs have the same metadata, with the exception of the ID
-     */
-    function tokenURI(uint256 tokenId) public pure override returns (string memory) {
-        // FIXME: Return token URI to JSON on IPFS
-        string memory json = Base64.encode(
-            bytes(
-                string(
-                    abi.encodePacked(
-                        '{"name": "Meta DAO #',
-                        tokenId.toString(),
-                        '", "description": "A collectible piece of land artwork, crafted by 8thproject, that you can treasure on the blockchain forever.", "image": "https://ipfs.io/ipfs/Qmf1EruEbcdwfghq34RoWNgeh9edZSGKsAckk3nD6MrrvC"}'
-                    )
-                )
-            )
-        );
-        return string(abi.encodePacked('data:application/json;base64,', json));
+    function _baseURI() internal view override returns (string memory) {
+        return _baseTokenURI;
     }
 
     /**

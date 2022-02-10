@@ -16,6 +16,7 @@ describe('Token contract', function () {
   let communityWalletAddress
   let proof
   let permissions
+  let baseURI
 
   async function massMint(amount) {
     let batchSize = 200
@@ -52,56 +53,59 @@ describe('Token contract', function () {
   beforeEach(async function () {
     Token = await ethers.getContractFactory('MetaDaoNft')
     ;[owner, addr1, addr2, addr3, artist] = await ethers.getSigners()
+    baseURI = 'ipfs://example/'
 
-    contract = await Token.deploy([], artist.address)
+    contract = await Token.deploy([], artist.address, baseURI)
     price = await contract.PRICE()
     maxMints = await contract.MAX_MINTS()
     await contract.deployed()
   })
 
-  this.afterEach(() => {
+  afterEach(() => {
     error = undefined
   })
 
-  describe('name', function () {
-    it('should return the correct name', async function () {
-      expect(await contract.name()).to.equal('Meta DAO NFT')
+  describe('constants', function () {
+    describe('name', function () {
+      it('should return the correct name', async function () {
+        expect(await contract.name()).to.equal('Meta DAO NFT')
+      })
     })
-  })
 
-  describe('symbol', function () {
-    it('should return the correct symbol', async function () {
-      expect(await contract.symbol()).to.equal('METADAONFT')
+    describe('symbol', function () {
+      it('should return the correct symbol', async function () {
+        expect(await contract.symbol()).to.equal('METADAONFT')
+      })
     })
-  })
 
-  describe('DEFAULT_ADMIN_ROLE', function () {
-    it('should return the black hole address', async function () {
-      expect(await contract.DEFAULT_ADMIN_ROLE()).to.equal(ethers.constants.HashZero)
+    describe('DEFAULT_ADMIN_ROLE', function () {
+      it('should return the black hole address', async function () {
+        expect(await contract.DEFAULT_ADMIN_ROLE()).to.equal(ethers.constants.HashZero)
+      })
     })
-  })
 
-  describe('PRICE', function () {
-    it('should return the correct price', async function () {
-      expect(price).to.equal(ethers.utils.parseEther('.04'))
+    describe('PRICE', function () {
+      it('should return the correct price', async function () {
+        expect(price).to.equal(ethers.utils.parseEther('.04'))
+      })
     })
-  })
 
-  describe('FOUNDER_ROLE', function () {
-    it('should return the correct value', async function () {
-      expect(await contract.FOUNDER_ROLE()).to.equal(`0x${keccak256('FOUNDER_ROLE').toString('hex')}`)
+    describe('FOUNDER_ROLE', function () {
+      it('should return the correct value', async function () {
+        expect(await contract.FOUNDER_ROLE()).to.equal(`0x${keccak256('FOUNDER_ROLE').toString('hex')}`)
+      })
     })
-  })
 
-  describe('MAX_MINTS', function () {
-    it('should return the correct max number of mints', async function () {
-      expect(maxMints).to.equal(4444)
+    describe('MAX_MINTS', function () {
+      it('should return the correct max number of mints', async function () {
+        expect(maxMints).to.equal(4444)
+      })
     })
-  })
 
-  describe('owner', function () {
-    it('should return the correct owner', async function () {
-      expect(await contract.owner()).to.equal(owner.address)
+    describe('owner', function () {
+      it('should return the correct owner', async function () {
+        expect(await contract.owner()).to.equal(owner.address)
+      })
     })
   })
 
@@ -164,7 +168,7 @@ describe('Token contract', function () {
 
     beforeEach(async function () {
       founders = Array.from({ length: 3 }, () => ethers.Wallet.createRandom().address)
-      contract = await Token.deploy(founders, artist.address)
+      contract = await Token.deploy(founders, artist.address, baseURI)
       await contract.deployed()
     })
 
@@ -388,14 +392,10 @@ describe('Token contract', function () {
             value = price.mul(numMints)
           })
 
-          it('mints one to the intended recipient', async function () {
-            await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
-            expect(await contract.balanceOf(addr1.address)).to.equal(numMints.toString())
-          })
-
-          it('captures the payment on contract', async function () {
+          it('mints one to the intended recipient and captures payment', async function () {
             await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
             const contractBalance = await ethers.provider.getBalance(contract.address)
+            expect(await contract.balanceOf(addr1.address)).to.equal(numMints.toString())
             expect(contractBalance).to.equal(value.toString())
           })
         })
@@ -405,14 +405,10 @@ describe('Token contract', function () {
             value = price.mul(numMints).add(price)
           })
 
-          it('mints one to the intended recipient', async function () {
-            await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
-            expect(await contract.balanceOf(addr1.address)).to.equal(numMints.toString())
-          })
-
-          it('captures the full payment on contract (keeps the change)', async function () {
+          it('mints one to the intended recipient and captures full payment (keeps the change)', async function () {
             await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
             const contractBalance = await ethers.provider.getBalance(contract.address)
+            expect(await contract.balanceOf(addr1.address)).to.equal(numMints.toString())
             expect(contractBalance).to.equal(value.toString())
           })
         })
@@ -422,20 +418,14 @@ describe('Token contract', function () {
             value = price.mul(numMints).sub(1)
           })
 
-          it('does not mint to the recipient', async function () {
-            try {
-              await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
-            } catch (err) {}
-            expect(await contract.balanceOf(addr1.address)).to.equal('0')
-          })
-
-          it('generates an error', async function () {
+          it('does not mint to the recipient and generates an error', async function () {
             try {
               await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
               throw new Error('was not supposed to succeed')
             } catch (err) {
               error = err
             }
+            expect(await contract.balanceOf(addr1.address)).to.equal('0')
             expect(error.message).to.contain('Value below price')
           })
         })
@@ -448,20 +438,14 @@ describe('Token contract', function () {
           value = price.mul(numMints)
         })
 
-        it('does not mint to the recipient', async function () {
-          try {
-            await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
-          } catch (err) {}
-          expect(await contract.balanceOf(addr1.address)).to.equal('0')
-        })
-
-        it('generates an error', async function () {
+        it('does not mint to the recipient and generates an error', async function () {
           try {
             await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
             throw new Error('was not supposed to succeed')
           } catch (err) {
             error = err
           }
+          expect(await contract.balanceOf(addr1.address)).to.equal('0')
           expect(error.message).to.contain('Not on whitelist')
         })
       })
@@ -832,6 +816,31 @@ describe('Token contract', function () {
         expect(error.message).to.contain('Not on whitelist.')
         expect(await contract.balanceOf(addr1.address)).to.equal('0')
       })
+    })
+  })
+
+  describe('tokenURI', function () {
+    beforeEach(async function () {
+      // Mint a few pieces
+      await contract.connect(owner).allowPublicMinting()
+      await massMint(3)
+    })
+
+    it('returns the correct IPFS url for a minted token', async function () {
+      console.log('OUTPUT', await contract.tokenURI(1))
+      expect(await contract.tokenURI(1)).to.equal(`${baseURI}1`)
+      expect(await contract.tokenURI(2)).to.equal(`${baseURI}2`)
+      expect(await contract.tokenURI(3)).to.equal(`${baseURI}3`)
+    })
+
+    it('throws an error for an unminted token', async function () {
+      try {
+        await contract.tokenURI(4)
+        throw new Error('was not supposed to succeed')
+      } catch (err) {
+        error = err
+      }
+      expect(error.message).to.contain('URI query for nonexistent token')
     })
   })
 })
