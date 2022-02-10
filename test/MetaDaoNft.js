@@ -17,6 +17,33 @@ describe('Token contract', function () {
   let proof
   let permissions
 
+  async function massMint(amount) {
+    let batchSize = 200
+    let numMinted = 0
+    let numBatches
+
+    // Load up the owner with more ETH
+    const signers = await ethers.getSigners()
+    await signers[signers.length - 1].sendTransaction({ to: owner.address, value: ethers.utils.parseEther('100') })
+    await signers[signers.length - 2].sendTransaction({ to: owner.address, value: ethers.utils.parseEther('100') })
+    await signers[signers.length - 3].sendTransaction({ to: owner.address, value: ethers.utils.parseEther('100') })
+    await signers[signers.length - 4].sendTransaction({ to: owner.address, value: ethers.utils.parseEther('100') })
+
+    while (batchSize > 0) {
+      numBatches = Math.floor((amount - numMinted) / batchSize)
+
+      for (let i = 0; i < numBatches; i++) {
+        try {
+          await contract.connect(owner).mint(owner.address, batchSize, [], [], { value: 0 })
+        } catch (error) {}
+        numMinted += batchSize
+      }
+
+      batchSize = Math.floor(batchSize / 2)
+      numBatches = Math.floor((amount - numMinted) / batchSize)
+    }
+  }
+
   async function isAddressWhitelisted(address, whitelistTree) {
     const { proof, positions } = getWhitelistParams(address, whitelistTree)
     return contract.verifyWhitelist(address, proof, positions)
@@ -28,6 +55,7 @@ describe('Token contract', function () {
 
     contract = await Token.deploy([], artist.address)
     price = await contract.PRICE()
+    maxMints = await contract.MAX_MINTS()
     await contract.deployed()
   })
 
@@ -67,7 +95,7 @@ describe('Token contract', function () {
 
   describe('MAX_MINTS', function () {
     it('should return the correct max number of mints', async function () {
-      expect(await contract.MAX_MINTS()).to.equal(4444)
+      expect(maxMints).to.equal(4444)
     })
   })
 
@@ -526,40 +554,157 @@ describe('Token contract', function () {
       })
     })
 
-    // FIXME: WRITE THESE
+    describe('when sold out', function () {
+      beforeEach(async function () {
+        await massMint(maxMints)
+        proof = positions = []
+      })
 
-    // When supply has 5 left
-    //   when minting 1 -> works
-    //   when minting 2 -> works
-    //   when minting 3 -> works
-    //   when minting 4 -> works
-    //   when minting 5 -> works
-    //   when minting 6 -> error
+      it('does not mint to the recipient and generates a soldout error', async function () {
+        try {
+          await contract.connect(addr2).mint(addr1.address, 1, proof, positions, { value })
+        } catch (err) {
+          error = err
+        }
+        expect(await contract.balanceOf(addr1.address)).to.equal('0')
+        expect(error.message).to.contain('Soldout!')
+      })
+    })
 
-    // When supply has 4 left
-    //   when minting 1 -> works
-    //   when minting 2 -> works
-    //   when minting 3 -> works
-    //   when minting 4 -> works
-    //   when minting 5 -> error
+    describe('when nearing the end of the mint', function () {
+      beforeEach(async function () {
+        await contract.allowPublicMinting()
+        proof = positions = []
+      })
 
-    // When supply has 3 left
-    //   when minting 1 -> works
-    //   when minting 2 -> works
-    //   when minting 3 -> works
-    //   when minting 4 -> error
+      describe(`when supply has 4 left`, function () {
+        beforeEach(async function () {
+          await massMint(maxMints - 4)
+        })
 
-    // When supply has 2 left
-    //   when minting 1 -> works
-    //   when minting 2 -> works
-    //   when minting 3 -> error
+        for (let numMints = 1; numMints <= 4; numMints++) itShouldSuccessfullyMint(numMints)
 
-    // When supply has 1 left
-    //   when minting 1 -> works
-    //   when minting 2 -> error
+        describe('when the number of mints is 5', function () {
+          beforeEach(function () {
+            numMints = 5
+            value = price.mul(numMints)
+          })
 
-    // When supply has 0 left
-    //   when minting 1 -> error
+          it('does not mint to the recipient', async function () {
+            try {
+              await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+            } catch (err) {}
+            expect(await contract.balanceOf(addr1.address)).to.equal('0')
+          })
+
+          it('generates an error', async function () {
+            try {
+              await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+              throw new Error('was not supposed to succeed')
+            } catch (err) {
+              error = err
+            }
+            expect(error.message).to.contain('Not enough mints left.')
+          })
+        })
+      })
+
+      describe(`when supply has 3 left`, function () {
+        beforeEach(async function () {
+          await massMint(maxMints - 3)
+        })
+
+        for (let numMints = 1; numMints <= 3; numMints++) itShouldSuccessfullyMint(numMints)
+
+        describe('when the number of mints is 4', function () {
+          beforeEach(function () {
+            numMints = 4
+            value = price.mul(numMints)
+          })
+
+          it('does not mint to the recipient', async function () {
+            try {
+              await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+            } catch (err) {}
+            expect(await contract.balanceOf(addr1.address)).to.equal('0')
+          })
+
+          it('generates an error', async function () {
+            try {
+              await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+              throw new Error('was not supposed to succeed')
+            } catch (err) {
+              error = err
+            }
+            expect(error.message).to.contain('Not enough mints left.')
+          })
+        })
+      })
+
+      describe(`when supply has 2 left`, function () {
+        beforeEach(async function () {
+          await massMint(maxMints - 2)
+        })
+
+        for (let numMints = 1; numMints <= 2; numMints++) itShouldSuccessfullyMint(numMints)
+
+        describe('when the number of mints is 3', function () {
+          beforeEach(function () {
+            numMints = 3
+            value = price.mul(numMints)
+          })
+
+          it('does not mint to the recipient', async function () {
+            try {
+              await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+            } catch (err) {}
+            expect(await contract.balanceOf(addr1.address)).to.equal('0')
+          })
+
+          it('generates an error', async function () {
+            try {
+              await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+              throw new Error('was not supposed to succeed')
+            } catch (err) {
+              error = err
+            }
+            expect(error.message).to.contain('Not enough mints left.')
+          })
+        })
+      })
+
+      describe(`when supply has 1 left`, function () {
+        beforeEach(async function () {
+          await massMint(maxMints - 1)
+        })
+
+        itShouldSuccessfullyMint(1)
+
+        describe('when the number of mints is 2', function () {
+          beforeEach(function () {
+            numMints = 2
+            value = price.mul(numMints)
+          })
+
+          it('does not mint to the recipient', async function () {
+            try {
+              await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+            } catch (err) {}
+            expect(await contract.balanceOf(addr1.address)).to.equal('0')
+          })
+
+          it('generates an error', async function () {
+            try {
+              await contract.connect(addr2).mint(addr1.address, numMints, proof, positions, { value })
+              throw new Error('was not supposed to succeed')
+            } catch (err) {
+              error = err
+            }
+            expect(error.message).to.contain('Not enough mints left.')
+          })
+        })
+      })
+    })
   })
 
   describe('when public minting is not allowed', function () {

@@ -162,7 +162,8 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
         uint256[] memory _positions
     ) public payable {
         require(numMints > 0, 'Must provide an amount to mint.');
-        require(totalSupply() < MAX_MINTS, 'Soldout!');
+        require(totalSupply() != MAX_MINTS, 'Soldout!');
+        require(totalSupply() + numMints <= MAX_MINTS, 'Not enough mints left.');
 
         if (!hasRole(DEFAULT_ADMIN_ROLE, _msgSender())) {
             require(msg.value >= PRICE * numMints, 'Value below price');
