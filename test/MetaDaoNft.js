@@ -13,9 +13,7 @@ describe('Token contract', function () {
   let maxMints
   let price
   let error
-  let communityWalletAddress
   let proof
-  let permissions
   let baseURI
 
   async function massMint(amount) {
