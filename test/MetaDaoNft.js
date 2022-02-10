@@ -1,5 +1,4 @@
 const { expect } = require('chai')
-const base64 = require('base-64')
 const keccak256 = require('keccak256')
 const { getWhitelistParams, createWhitelistTree, rootFrom } = require('../../frontend/src/utilities/merkleTrees')
 
