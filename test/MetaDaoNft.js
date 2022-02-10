@@ -827,7 +827,6 @@ describe('Token contract', function () {
     })
 
     it('returns the correct IPFS url for a minted token', async function () {
-      console.log('OUTPUT', await contract.tokenURI(1))
       expect(await contract.tokenURI(1)).to.equal(`${baseURI}1`)
       expect(await contract.tokenURI(2)).to.equal(`${baseURI}2`)
       expect(await contract.tokenURI(3)).to.equal(`${baseURI}3`)
