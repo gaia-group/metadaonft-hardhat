@@ -8,7 +8,6 @@ async function main() {
     )
   }
 
-  // FIXME: Need to populate this with the correct signer address
   const [deployer] = await ethers.getSigners()
   console.log('Deploying the contracts with the account:', await deployer.getAddress())
 
