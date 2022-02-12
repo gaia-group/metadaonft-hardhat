@@ -49,10 +49,15 @@ describe('Token contract', function () {
 
   beforeEach(async function () {
     Token = await ethers.getContractFactory('MetaDaoNft')
-    ;[owner, addr1, addr2, addr3, artist] = await ethers.getSigners()
+    ;[owner, addr1, addr2, addr3, artist, founder1, staff1, staff2, staff3] = await ethers.getSigners()
     baseURI = 'ipfs://example/'
 
-    contract = await Token.deploy([], artist.address, baseURI)
+    contract = await Token.deploy(
+      [owner.address, founder1.address],
+      artist.address,
+      [staff1.address, staff2.address, staff3.address],
+      baseURI
+    )
     price = await contract.PRICE()
     maxMints = await contract.MAX_MINTS()
     await contract.deployed()
@@ -102,6 +107,23 @@ describe('Token contract', function () {
     describe('owner', function () {
       it('should return the correct owner', async function () {
         expect(await contract.owner()).to.equal(owner.address)
+      })
+    })
+
+    describe('staffAllocations', function () {
+      it('should return the correct allocations for provided staff members', async function () {
+        expect(await contract.staffAllocations(staff1.address)).to.equal(5)
+        expect(await contract.staffAllocations(staff2.address)).to.equal(5)
+        expect(await contract.staffAllocations(staff3.address)).to.equal(5)
+      })
+
+      it('should return the correct allocations for founders', async function () {
+        expect(await contract.staffAllocations(owner.address)).to.equal(20)
+        expect(await contract.staffAllocations(founder1.address)).to.equal(20)
+      })
+
+      it('should return the correct allocations for artist', async function () {
+        expect(await contract.staffAllocations(artist.address)).to.equal(20)
       })
     })
   })
@@ -165,7 +187,7 @@ describe('Token contract', function () {
 
     beforeEach(async function () {
       founders = Array.from({ length: 3 }, () => ethers.Wallet.createRandom().address)
-      contract = await Token.deploy(founders, artist.address, baseURI)
+      contract = await Token.deploy(founders, artist.address, [], baseURI)
       await contract.deployed()
     })
 
@@ -240,6 +262,11 @@ describe('Token contract', function () {
     })
 
     describe('with no FOUNDER_ROLE holders on contract', function () {
+      beforeEach(async function () {
+        await contract.revokeRole(contract.FOUNDER_ROLE(), founder1.address)
+        await contract.revokeRole(contract.FOUNDER_ROLE(), owner.address)
+      })
+
       it('sends 100% to the artist', async function () {
         const before = await artist.getBalance()
         await contract.withdrawAll()
@@ -250,7 +277,7 @@ describe('Token contract', function () {
 
     describe('with only one person as a FOUNDER_ROLE', function () {
       beforeEach(async function () {
-        await contract.connect(owner).grantRole(await contract.FOUNDER_ROLE(), owner.address)
+        await contract.revokeRole(contract.FOUNDER_ROLE(), founder1.address)
       })
 
       it('sends the remainings 90% to the FOUNDER (accounting for gas)', async function () {
@@ -276,9 +303,9 @@ describe('Token contract', function () {
 
     describe('with two people on FOUNDER_ROLE', function () {
       beforeEach(async function () {
-        const FOUNDER_ROLE = await contract.FOUNDER_ROLE()
-        await contract.connect(owner).grantRole(FOUNDER_ROLE, addr1.address)
-        await contract.connect(owner).grantRole(FOUNDER_ROLE, addr2.address)
+        // Make non-owner a founder so we don't need to calculate gas.
+        await contract.revokeRole(contract.FOUNDER_ROLE(), owner.address)
+        await contract.grantRole(contract.FOUNDER_ROLE(), addr1.address)
       })
 
       it('sends 10% to the ARTIST', async function () {
@@ -294,15 +321,15 @@ describe('Token contract', function () {
         expectedBalance = expectedBalance.mul(90).div(100).div(2)
 
         const addr1Before = await addr1.getBalance()
-        const addr2Before = await addr2.getBalance()
+        const founder1Before = await founder1.getBalance()
 
         await contract.withdrawAll()
 
         const addr1After = await addr1.getBalance()
-        const addr2After = await addr2.getBalance()
+        const founder1After = await founder1.getBalance()
 
         expect(addr1After.sub(addr1Before)).to.equal(expectedBalance)
-        expect(addr2After.sub(addr2Before)).to.equal(expectedBalance)
+        expect(founder1After.sub(founder1Before)).to.equal(expectedBalance)
       })
     })
   })
@@ -683,6 +710,124 @@ describe('Token contract', function () {
             }
             expect(error.message).to.contain('Not enough mints left.')
           })
+        })
+      })
+    })
+  })
+
+  describe('Staff minting', function () {
+    describe('when the address does not have any staff allocations', function () {
+      it('generates an error', async function () {
+        try {
+          await contract.connect(addr1).staffMint()
+        } catch (err) {
+          error = err
+        }
+        expect(error.message).to.contain('Must have claimable mints')
+      })
+    })
+
+    describe('when the address is a staff member', function () {
+      it('successfully mints 5 unclaimed mints', async function () {
+        expect(await contract.balanceOf(staff1.address)).to.equal('0')
+        await contract.connect(staff1).staffMint()
+        expect(await contract.balanceOf(staff1.address)).to.equal('5')
+
+        expect(await contract.balanceOf(staff2.address)).to.equal('0')
+        await contract.connect(staff2).staffMint()
+        expect(await contract.balanceOf(staff2.address)).to.equal('5')
+
+        expect(await contract.balanceOf(staff3.address)).to.equal('0')
+        await contract.connect(staff3).staffMint()
+        expect(await contract.balanceOf(staff3.address)).to.equal('5')
+      })
+
+      describe('when trying to claim again', function () {
+        beforeEach(async function () {
+          // Claim first time
+          await contract.connect(staff1).staffMint()
+        })
+
+        it('generates an error', async function () {
+          try {
+            await contract.connect(staff1).staffMint()
+          } catch (err) {
+            error = err
+          }
+          expect(error.message).to.contain('Must have claimable mints')
+        })
+
+        it('does not mint more than 5 to the staff member', async function () {
+          try {
+            await contract.connect(staff1).staffMint()
+          } catch (err) {}
+          expect(await contract.balanceOf(staff1.address)).to.equal('5')
+        })
+      })
+    })
+
+    describe('when the address is the artist', function () {
+      it('successfully mints 20 unclaimed mints', async function () {
+        expect(await contract.balanceOf(artist.address)).to.equal('0')
+        await contract.connect(artist).staffMint()
+        expect(await contract.balanceOf(artist.address)).to.equal('20')
+      })
+
+      describe('when trying to claim again', function () {
+        beforeEach(async function () {
+          // Claim first time
+          await contract.connect(artist).staffMint()
+        })
+
+        it('generates an error', async function () {
+          try {
+            await contract.connect(artist).staffMint()
+          } catch (err) {
+            error = err
+          }
+          expect(error.message).to.contain('Must have claimable mints')
+        })
+
+        it('does not mint more than 20 to the artist', async function () {
+          try {
+            await contract.connect(artist).staffMint()
+          } catch (err) {}
+          expect(await contract.balanceOf(artist.address)).to.equal('20')
+        })
+      })
+    })
+
+    describe('when the address is a founder', function () {
+      it('successfully mints 20 unclaimed mints', async function () {
+        expect(await contract.balanceOf(owner.address)).to.equal('0')
+        await contract.connect(owner).staffMint()
+        expect(await contract.balanceOf(owner.address)).to.equal('20')
+
+        expect(await contract.balanceOf(founder1.address)).to.equal('0')
+        await contract.connect(founder1).staffMint()
+        expect(await contract.balanceOf(founder1.address)).to.equal('20')
+      })
+
+      describe('when trying to claim again', function () {
+        beforeEach(async function () {
+          // Claim first time
+          await contract.connect(owner).staffMint()
+        })
+
+        it('generates an error', async function () {
+          try {
+            await contract.connect(owner).staffMint()
+          } catch (err) {
+            error = err
+          }
+          expect(error.message).to.contain('Must have claimable mints')
+        })
+
+        it('does not mint more than 20 to the staff member', async function () {
+          try {
+            await contract.connect(owner).staffMint()
+          } catch (err) {}
+          expect(await contract.balanceOf(owner.address)).to.equal('20')
         })
       })
     })

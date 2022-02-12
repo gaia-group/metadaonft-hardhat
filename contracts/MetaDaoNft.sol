@@ -38,12 +38,15 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
     /// @dev Holds the value of the baseURI for token generation
     string private _baseTokenURI;
 
+    /// @dev A mapping of addresses to claimable mints
+    mapping(address => uint256) public staffAllocations;
+
     /**
      * @dev Indicates if public minting is opened. If true, addresses not on the
      * whitelist can mint tokens. If false, the address must be on the whitelist
      * to mint.
      */
-    bool public isPublicMintingAllowed;
+    bool public isPublicMintingAllowed = false;
 
     /**
      *  @dev A merkle tree root for the whitelist. The merkle tree is generated
@@ -60,6 +63,20 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
         _; // Executes the rest of the modified function
     }
 
+    /// @dev Gates functions that should only be called by people who have allocated free mints
+    modifier onlyWithAllocation() {
+        uint256 claimableMints = staffAllocations[_msgSender()];
+        require(claimableMints > 0, 'Must have claimable mints');
+        _; // Executes the rest of the modified function
+    }
+
+    /// @dev Gates functions that should only be called if there are mints left
+    modifier onlyWithMintsLeft(uint256 numMints) {
+        require(totalSupply() != MAX_MINTS, 'Soldout!');
+        require(totalSupply() + numMints <= MAX_MINTS, 'Not enough mints left.');
+        _; // Executes the rest of the modified function
+    }
+
     /**
      * @notice Deploys the contract, sets the baseTokenURI, sets the the max
      * mints, roles for founders and disables public minting.
@@ -70,11 +87,23 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
     constructor(
         address[] memory founders,
         address artist,
+        address[] memory staff,
         string memory newBaseURI
     ) ERC721('Meta DAO NFT', 'METADAONFT') {
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
-        disallowPublicMinting();
         _baseTokenURI = newBaseURI;
+
+        for (uint256 i = 0; i < staff.length; i++) {
+            address staffAddress = staff[i];
+            staffAllocations[staffAddress] = 5; // 5 claimable mints per staff member
+        }
+
+        for (uint256 i = 0; i < founders.length; i++) {
+            address founderAddress = founders[i];
+            staffAllocations[founderAddress] = 20; // 20 claimable mints per founder
+        }
+
+        staffAllocations[artist] = 20; // 20 claimable mints for artist
 
         _setupRole(ARTIST_ROLE, artist);
 
@@ -147,10 +176,8 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
         uint8 numMints,
         bytes32[] memory _proof,
         uint256[] memory _positions
-    ) public payable {
+    ) public payable onlyWithMintsLeft(numMints) {
         require(numMints > 0, 'Must provide an amount to mint.');
-        require(totalSupply() != MAX_MINTS, 'Soldout!');
-        require(totalSupply() + numMints <= MAX_MINTS, 'Not enough mints left.');
 
         if (!hasRole(DEFAULT_ADMIN_ROLE, _msgSender())) {
             require(msg.value >= PRICE * numMints, 'Value below price');
@@ -166,6 +193,13 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
         for (uint256 i = 0; i < numMints; i++) {
             _mintAnElement(recipient);
         }
+    }
+
+    function staffMint() public onlyWithAllocation onlyWithMintsLeft(staffAllocations[_msgSender()]) {
+        for (uint256 i = 0; i < staffAllocations[_msgSender()]; i++) {
+            _mintAnElement(_msgSender());
+        }
+        staffAllocations[_msgSender()] = 0;
     }
 
     /**

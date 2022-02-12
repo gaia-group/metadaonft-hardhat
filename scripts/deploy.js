@@ -15,7 +15,7 @@ async function main() {
   console.log('Account balance:', (await deployer.getBalance()).toString())
 
   const MetaDaoNft = await ethers.getContractFactory('MetaDaoNft')
-  const chancellor = '0x32BF741D6DF2C00A0687b834FeC84D2A2B80388c'
+  const chancellor = ['0x32BF741D6DF2C00A0687b834FeC84D2A2B80388c', '0x25d53e88ae482e6612bed27d040b370c7e09838c']
   const archit3c = '0x25d53e88ae482e6612bed27d040b370c7e09838c'
   const founders = [archit3c, chancellor]
   const artist = '0x627137FC6cFa3fbfa0ed936fB4B5d66fB383DBE8'
