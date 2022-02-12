@@ -57,6 +57,9 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
     /// @dev An event emitted when the mint was successful.
     event SuccessfulMint(uint256 tokenId, address recipient);
 
+    /// @dev An event emitted when funds have been received.
+    event ReceivedFunds(uint256 msgValue);
+
     /// @dev Gates functions that should only be called by the contract admins.
     modifier onlyAdmin() {
         require(hasRole(DEFAULT_ADMIN_ROLE, _msgSender()), 'Must be an admin.');
@@ -275,7 +278,7 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
      * artist gets remaining 10%.
      *
      */
-    function withdrawAll() public onlyAdmin {
+    function withdrawAll() public {
         uint256 balance = address(this).balance;
         uint256 founderCount = getRoleMemberCount(FOUNDER_ROLE);
         require(balance > 0, 'Nothing to withdraw.');

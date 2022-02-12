@@ -232,27 +232,15 @@ describe('Token contract', function () {
       }
     })
 
-    describe('when not an admin', function () {
-      it('generates an error', async function () {
-        try {
-          await contract.connect(addr3).withdrawAll()
-          throw new Error('was not supposed to succeed')
-        } catch (err) {
-          error = err
-        }
-        expect(error.message).to.contain('Must be an admin.')
-      })
-    })
-
     describe('with no balance in the contract', function () {
       beforeEach(async function () {
         // Withdraw all funds
-        await contract.connect(owner).withdrawAll()
+        await contract.connect(addr3).withdrawAll()
       })
 
       it('generates an error', async function () {
         try {
-          await contract.connect(owner).withdrawAll()
+          await contract.connect(addr3).withdrawAll()
           throw new Error('was not supposed to succeed')
         } catch (err) {
           error = err
@@ -269,7 +257,8 @@ describe('Token contract', function () {
 
       it('sends 100% to the artist', async function () {
         const before = await artist.getBalance()
-        await contract.withdrawAll()
+        // Withdraw all funds using a non-authorized wallet
+        await contract.connect(addr3).withdrawAll()
         const after = await artist.getBalance()
         expect(after.sub(before)).to.equal(expectedBalance)
       })
@@ -294,7 +283,9 @@ describe('Token contract', function () {
       it('sends 10% to the ARTIST', async function () {
         expectedBalance = expectedBalance.mul(10).div(100)
         const before = await artist.getBalance()
-        await contract.withdrawAll()
+
+        // Withdraw all funds using a non-authorized wallet
+        await contract.connect(addr3).withdrawAll()
 
         const after = await artist.getBalance()
         expect(after.sub(before)).to.equal(expectedBalance)
