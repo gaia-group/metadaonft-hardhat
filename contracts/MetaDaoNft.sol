@@ -12,21 +12,19 @@ import '@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol';
 /**
  *  @title Meta DAO NFT
  *
- *  @notice This implements the contract for the Meta DAO NFT. Admins can
- *  and change the number of mints with a hard cap of 10,000 total mints.
- *  Contract can be paused by changing max mints to be less than current supply.
- *  Funds from sales can be withdrawn any time - 75% sent to the DAO wallet, and
- *  the remaining 25% split evenly among founding member wallets.
+ *  @notice This implements the contract for the Meta DAO NFT.
+ *  Contract can be paused by disabling public mints and creating a bogus merkle
+ *  root tree for the whitelist. Funds from sales can be withdrawn any time by
+ *  anyone and will withdrawn to founders + artist. All founders on the contract
+ *  share a 90% split and can be removed. The artist gets a 10% split and
+ *  can never be removed.
  */
 
 contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
-    /// @dev Used to convert tokenId to string for on-chain static metadata
-    using Strings for uint256;
-
     /// @dev The price of a single mint in Ether
     uint256 public constant PRICE = 0.04 ether;
 
-    /// @dev Hard cap on the maximum number of mints. No one can set max mints higher than the hard cap.
+    /// @dev Hardcoded cap on the maximum number of mints.
     uint256 public constant MAX_MINTS = 4444;
 
     /// @dev A role for people who are project founders.
@@ -66,14 +64,18 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
         _; // Executes the rest of the modified function
     }
 
-    /// @dev Gates functions that should only be called by people who have allocated free mints
+    /// @dev Gates functions that should only be called by people who have claimable free mints
     modifier onlyWithAllocation() {
         uint256 claimableMints = staffAllocations[_msgSender()];
         require(claimableMints > 0, 'Must have claimable mints');
         _; // Executes the rest of the modified function
     }
 
-    /// @dev Gates functions that should only be called if there are mints left
+    /**
+     *  @dev Gates functions that should only be called if there are mints left
+     *
+     * @param numMints The number of mints attempting to be minted.
+     */
     modifier onlyWithMintsLeft(uint256 numMints) {
         require(totalSupply() != MAX_MINTS, 'Soldout!');
         require(totalSupply() + numMints <= MAX_MINTS, 'Not enough mints left.');
@@ -86,6 +88,8 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
      *
      * @param founders The addresses of founders to be granted founder role.
      * @param artist The address of the artist to be granted artist role.
+     * @param staff The address of the staff members who will be granted 5 free mints
+     * @param newBaseURI The base URI for the artwork generated for this contract
      */
     constructor(
         address[] memory founders,
@@ -162,7 +166,10 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
     }
 
     /**
-     * @notice Mints a new token for the recipient.
+     * @notice Mints new tokens for the recipient.
+     * @dev To generate the _proof and _positions parameters for this function, see:
+     * https://dev.to/0xmojo7/merkle-tree-solidity-sc-validation-568m
+     * https://github.com/miguelmota/merkletreejs/
      *
      * @param recipient The address to receive the newly minted tokens
      * @param numMints The number of mints to mint
@@ -198,6 +205,13 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
         }
     }
 
+    /**
+     * @notice Mints claimable tokens for staff members, artist, and founders.
+     *
+     * @dev This function pulls the allocations from the staffAllocations map,
+     * and mints the appropriate number of mints for the address claiming, then
+     * marks the mints as claimed by setting the value in the map to 0.
+     */
     function staffMint() public onlyWithAllocation onlyWithMintsLeft(staffAllocations[_msgSender()]) {
         for (uint256 i = 0; i < staffAllocations[_msgSender()]; i++) {
             _mintAnElement(_msgSender());
