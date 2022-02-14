@@ -7,7 +7,7 @@ import './utils/Base64.sol';
 import '@openzeppelin/contracts/access/AccessControlEnumerable.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/utils/Strings.sol';
-import '@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol';
+import 'erc721a/contracts/ERC721A.sol';
 
 /**
  *  @title Meta DAO NFT
@@ -20,7 +20,7 @@ import '@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol';
  *  can never be removed.
  */
 
-contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
+contract MetaDaoNft is ERC721A, Ownable, AccessControlEnumerable {
     /// @dev The price of a single mint in Ether
     uint256 public constant PRICE = 0.04 ether;
 
@@ -53,7 +53,7 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
     bytes32 private _whitelistMerkleRoot;
 
     /// @dev An event emitted when the mint was successful.
-    event SuccessfulMint(uint256 tokenId, address recipient);
+    event SuccessfulMint(uint256 numMints, address recipient);
 
     /// @dev An event emitted when funds have been received.
     event ReceivedFunds(uint256 msgValue);
@@ -96,7 +96,7 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
         address artist,
         address[] memory staff,
         string memory newBaseURI
-    ) ERC721('Meta DAO NFT', 'METADAONFT') {
+    ) ERC721A('Meta DAO NFT', 'METADAONFT') {
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
         _baseTokenURI = newBaseURI;
 
@@ -200,9 +200,8 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
             }
         }
 
-        for (uint256 i = 0; i < numMints; i++) {
-            _mintAnElement(recipient);
-        }
+        _safeMint(recipient, numMints);
+        emit SuccessfulMint(numMints, recipient);
     }
 
     /**
@@ -213,10 +212,9 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
      * marks the mints as claimed by setting the value in the map to 0.
      */
     function staffMint() public onlyWithAllocation onlyWithMintsLeft(staffAllocations[_msgSender()]) {
-        for (uint256 i = 0; i < staffAllocations[_msgSender()]; i++) {
-            _mintAnElement(_msgSender());
-        }
+        _safeMint(_msgSender(), staffAllocations[_msgSender()]);
         staffAllocations[_msgSender()] = 0;
+        emit SuccessfulMint(staffAllocations[_msgSender()], _msgSender());
     }
 
     /**
@@ -236,24 +234,6 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
     }
 
     /**
-     * @dev {ERC721Pausable-beforeTokenTransfer} and {ERC721Enumerable-beforeTokenTransfer}
-     * both implement _beforeTokenTransfer, and we want their implementations
-     * to both be called. This function is used to call both of them whenever
-     * _beforeTokenTransfer is called.
-     *
-     * @param from The sender of the token.
-     * @param to The recipient of the token.
-     * @param tokenId The ID of the token to be transferred.
-     */
-    function _beforeTokenTransfer(
-        address from,
-        address to,
-        uint256 tokenId
-    ) internal override(ERC721Enumerable) {
-        super._beforeTokenTransfer(from, to, tokenId);
-    }
-
-    /**
      * @dev All interfaces need to support `supportsInterface`. This function
      * checks if the provided interface ID is supported.
      *
@@ -266,25 +246,10 @@ contract MetaDaoNft is ERC721Enumerable, Ownable, AccessControlEnumerable {
         public
         view
         virtual
-        override(AccessControlEnumerable, ERC721Enumerable)
+        override(AccessControlEnumerable, ERC721A)
         returns (bool)
     {
         return super.supportsInterface(interfaceId);
-    }
-
-    /**
-     * @dev Private function to encapsulate the logic of minting an element.
-     * Whenever a new mint is created, the `SuccessfulMint` event is emitted
-     * with the tokenId and the address of the recipient.
-     *
-     *
-     * @param recipient The address to receive the newly minted tokens
-     *
-     */
-    function _mintAnElement(address recipient) private {
-        uint256 tokenId = totalSupply() + 1;
-        _safeMint(recipient, tokenId);
-        emit SuccessfulMint(tokenId, recipient);
     }
 
     /**

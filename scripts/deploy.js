@@ -27,7 +27,7 @@ async function main() {
     domruby: '0x0ec88a8b2973B21E38F8c46A6CafAdE2514DF73c',
     PRD: '0x614672b1df0DA50D65472222C610980f86BE3965',
   }
-  const baseURI = 'ipfs://QmQscUmBUYcbRsJmHueLAYBM5egSoS2iKkUbCKteFC68gd/'
+  const baseURI = 'ipfs://QmXmbww58WW86N6yd7gq7x55Y5dG64nnEG88ZwpMjd7wzK/'
   const token = await MetaDaoNft.deploy(founders, artist, Object.values(staff), baseURI)
   await token.deployed()
 

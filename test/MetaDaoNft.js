@@ -33,7 +33,9 @@ describe('Token contract', function () {
       for (let i = 0; i < numBatches; i++) {
         try {
           await contract.connect(owner).mint(owner.address, batchSize, [], [], { value: 0 })
-        } catch (error) {}
+        } catch (error) {
+          console.error('error', error)
+        }
         numMinted += batchSize
       }
 
@@ -960,19 +962,19 @@ describe('Token contract', function () {
     })
 
     it('returns the correct IPFS url for a minted token', async function () {
+      expect(await contract.tokenURI(0)).to.equal(`${baseURI}0`)
       expect(await contract.tokenURI(1)).to.equal(`${baseURI}1`)
       expect(await contract.tokenURI(2)).to.equal(`${baseURI}2`)
-      expect(await contract.tokenURI(3)).to.equal(`${baseURI}3`)
     })
 
     it('throws an error for an unminted token', async function () {
       try {
-        await contract.tokenURI(4)
+        await contract.tokenURI(3)
         throw new Error('was not supposed to succeed')
       } catch (err) {
         error = err
       }
-      expect(error.message).to.contain('URI query for nonexistent token')
+      expect(error.message).to.contain('URIQueryForNonexistentToken')
     })
   })
 })
