@@ -165,7 +165,14 @@ contract MetaDaoNft is ERC721A, Ownable, AccessControlEnumerable {
     }
 
     /**
-     * @notice Mints new tokens for the recipient.
+     * @notice Mints new tokens for the recipient. Admins can mint any number of
+     * free tokens per transaction, for use in marketing purposes or to give away.
+     * During whitelist, the sender must be whitelisted and provide a proof and
+     * position in the Merkle Tree. During whitelist, there's a max of 2 mints
+     * per tx. During public sales, there's a max of 5 mints per tx. The value
+     * of the transaction must be at least the mint price multiplied by the
+     * number of mints being minted.
+     *
      * @dev To generate the _proof and _positions parameters for this function, see:
      * https://dev.to/0xmojo7/merkle-tree-solidity-sc-validation-568m
      * https://github.com/miguelmota/merkletreejs/
