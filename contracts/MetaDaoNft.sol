@@ -3,7 +3,6 @@
 pragma solidity ^0.8.0;
 
 import './utils/MerkleProof.sol';
-import './utils/Base64.sol';
 import '@openzeppelin/contracts/access/AccessControlEnumerable.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/utils/Strings.sol';
