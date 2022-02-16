@@ -11,6 +11,6 @@ const staff = {
   domruby: '0x0ec88a8b2973B21E38F8c46A6CafAdE2514DF73c',
   PRD: '0x614672b1df0DA50D65472222C610980f86BE3965',
 }
-const baseURI = 'ipfs://QmXmbww58WW86N6yd7gq7x55Y5dG64nnEG88ZwpMjd7wzK/'
+const baseURI = 'ipfs://QmVh3U21k4ua2bL57okRfLR1KHpevDBdXmhwQRK6AyxBgq/'
 
 module.exports = [founders, artist, Object.values(staff), baseURI]
