@@ -21,6 +21,10 @@ module.exports = {
       url: `https://eth-rinkeby.alchemyapi.io/v2/${secrets.rinkebyAlchemyKey}`,
       accounts: [`0x${secrets.testWalletPrivateKey}`],
     },
+    mainnet: {
+      url: `https://eth-mainnet.alchemyapi.io/v2/${secrets.mainnetAlchemyKey}`,
+      accounts: [`0x${secrets.prodWalletPrivateKey}`],
+    },
   },
   etherscan: {
     apiKey: secrets.etherscanApiKey,
